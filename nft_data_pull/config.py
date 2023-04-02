@@ -90,3 +90,8 @@ nft_transfers_columns=[
     "transaction_hash",
     "transfer_type"
 ]
+
+method_types={
+    "0xddf252ad": "transfer",
+    "0xa0712d68": "mint"
+}
