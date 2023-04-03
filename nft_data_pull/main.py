@@ -17,7 +17,7 @@ w3 = Web3(Web3.HTTPProvider(infura_url))
 celo_base_api_url = "https://explorer.celo.org/mainnet/api"
 
 
-def hex_to_int(hex) -> int:
+def hex_to_int(hex):
     try:
         return int(hex, 16)
     except:
@@ -48,7 +48,7 @@ def get_active_nft_collections():
 
     nft_collection_info_list = []
 
-    for index, row in df_filtered.iterrows():
+    for _, row in df_filtered.iterrows():
         try:
             contract_name = str(row["ContractName"])
 
@@ -64,42 +64,56 @@ def get_active_nft_collections():
             # filter out if contract is paused
             if "paused" in contract_abi:
                 is_paused = contract_instance.functions.paused().call()
-                if is_paused == True:
+                if is_paused is True:
                     continue
+            
+            api_query = f"{celo_base_api_url}/?module=token&action=getToken&contractaddress={contract_address}"
+            token = requests.get(api_query).json()
+
+            # skip if not status = 1 : OK
+            if token["status"] != "1":
+                continue
+
+            symbol = token["result"]["symbol"]
+            total_supply = int(token["result"]["totalSupply"])
+            token_type = token["result"]["type"]
 
             # filter out if collection is less than 10 nfts
-            total_supply = contract_instance.functions.totalSupply().call()
+            if total_supply == 0:
+                total_supply = contract_instance.functions.totalSupply().call()
             if total_supply < 10:
                 continue
             
-            # pull token symbol
-            if "symbol" in contract_abi:
+            # if blank - pull token symbol
+            if symbol == "" and "symbol" in contract_abi:
                 symbol = str(contract_instance.functions.symbol().call())
-            else:
-                symbol = ""
             
             # filter out basd on symbol name
             if "test" in symbol.lower():
                 continue
-
+            
+            api_query = f"{celo_base_api_url}/?module=account&action=txlist&address={contract_address}&sort=asc&start_block=0&page=1&offset=1"
+            first_tx = requests.get(api_query).json()
+            #with open('./tests/samples/first_tx.json', 'w') as f:
+            #    json.dump(result, f, indent=4)
+            timestamp = datetime.fromtimestamp(int(first_tx["result"][0]["timeStamp"])).replace(microsecond=0).isoformat()
+            
             # pull owner
             if "owner" in contract_abi:
                 owner = contract_instance.functions.owner().call()
-            else:
-                owner = ""
+            if owner == "":
+                owner = first_tx["result"][0]["from"]
             
             nft_collection_info_row = {
                 "chain" : "Celo",
                 "collection_name" : contract_name,
                 "collection_slug" : contract_name.lower(),
                 "contract_address" : contract_address,
-                "created_date" : "TODO",
-                "deploy_block_number" : "TODO",
-                "deploy_transaction_hash" : "TODO",
-                "description" : "TODO",
+                "created_date" : datetime.fromisoformat(timestamp).date(),
+                "deploy_block_number" : first_tx["result"][0]["blockNumber"],
+                "deploy_transaction_hash" : first_tx["result"][0]["hash"],
                 "owner" : owner,
-                "protocol_slug" : "TODO",
-                "standard" : "TODO",
+                "standard" : token_type,
                 "symbol" : symbol,
                 "total_supply" : total_supply
             }
@@ -223,6 +237,6 @@ def pull_nft_transfers():
 
 ##########
 #pull_all_contracts()
-#get_active_nft_collections()
+get_active_nft_collections()
 #pull_nft_transactions()
-pull_nft_transfers()
+#pull_nft_transfers()
