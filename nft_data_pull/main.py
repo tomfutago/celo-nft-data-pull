@@ -1,5 +1,4 @@
-import os
-import json
+import os, sys
 import requests
 import mimetypes
 import pandas as pd
@@ -24,39 +23,42 @@ def hex_to_int(hex):
     except:
         return hex
 
-def pull_all_contracts():
-    contracts = []
+def pull_nft_contracts():
+    nft_contracts_list = []
 
-    for page_n in range(1000):
+    for page_n in range(1, 1000):
         api_query = f"{celo_base_api_url}/?module=contract&action=listcontracts&filter=verified&page={page_n}"
-        result = requests.get(api_query).json()
+        contract = requests.get(api_query).json()
         #with open('./tests/samples/contracts.json', 'w') as f:
         #    json.dump(result, f, indent=4)
-        df = pd.json_normalize(result["result"])
-        if df.empty:
+        df_contract = pd.json_normalize(contract["result"])
+        if df_contract.empty:
             break
         else:
-            contracts.append(df)
+            # pre-filter contracts to only include ones that:
+            # - have tokenURI and totalSupply methods and..
+            df_filtered = df_contract[
+                df_contract["ABI"].str.contains("tokenURI", case=False) & 
+                df_contract["ABI"].str.contains("totalSupply", case=False)
+            ]
 
-    df_contracts = pd.concat(contracts)
-    df_contracts.to_csv("./output/staging/contracts.csv", index=False)
+            # - .. contract name doesn't contain "SmartContract" or "Test" strings
+            df_filtered = df_filtered[
+                df_filtered["ContractName"].str.contains("SmartContract|test", case=False) == False
+            ]
+            
+            nft_contracts_list.append(df_filtered)
+
+    df_contracts = pd.concat(nft_contracts_list)
+    df_contracts.to_csv("./output/staging/nft_contracts.csv", index=False)
 
 def get_active_nft_collections():
-    df_contracts = pd.read_csv("./output/staging/contracts.csv")
-    df_filtered = df_contracts[
-        df_contracts["ABI"].str.contains("tokenURI", case=False) & df_contracts["ABI"].str.contains("totalSupply", case=False)
-    ]
-
+    df_nft_contracts = pd.read_csv("./output/staging/nft_contracts.csv")
     nft_collection_info_list = []
 
-    for _, row in df_filtered.iterrows():
+    for _, row in df_nft_contracts.iterrows():
         try:
             contract_name = str(row["ContractName"])
-
-            # filter out based on contract name
-            if "test" in contract_name.lower() or "smartcontract" in contract_name.lower():
-                continue
-
             contract_address = w3.to_checksum_address(row["Address"])
             contract_abi = row["ABI"]
 
@@ -71,7 +73,7 @@ def get_active_nft_collections():
             api_query = f"{celo_base_api_url}/?module=token&action=getToken&contractaddress={contract_address}"
             token = requests.get(api_query).json()
 
-            # skip if not status = 1 : OK
+            # skip if status not 1 : OK
             if token["status"] != "1":
                 continue
 
@@ -79,9 +81,10 @@ def get_active_nft_collections():
             total_supply = int(token["result"]["totalSupply"])
             token_type = token["result"]["type"]
 
-            # filter out if collection is less than 10 nfts
+            # double check total_supply
             if total_supply == 0:
                 total_supply = contract_instance.functions.totalSupply().call()
+            # filter out if collection is less than 10 nfts
             if total_supply < 10:
                 continue
             
@@ -128,37 +131,50 @@ def get_active_nft_collections():
     df_nft_collection_info.to_csv("./output/nft_collection_info.csv", index=False)
 
 def pull_nft_info():
+    df_nft_collection_info = pd.read_csv("./output/nft_collection_info.csv")
     nft_info_list = []
-    contract_address = w3.to_checksum_address("0xAc80c3c8b122DB4DcC3C351ca93aC7E0927C605d") # just test
-    contract_abi = '[{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"approved","type":"address"},{"indexed":true,"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"operator","type":"address"},{"indexed":false,"internalType":"bool","name":"approved","type":"bool"}],"name":"ApprovalForAll","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Paused","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":true,"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Unpaused","type":"event"},{"inputs":[{"internalType":"address","name":"_addressToWhitelist","type":"address"}],"name":"addUser","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"approve","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"baseExtension","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"baseURI","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"closeWhitelist","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"cost","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"getApproved","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"address","name":"operator","type":"address"}],"name":"isApprovedForAll","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"isWhitelist","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"maxMintAmount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"maxSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_to","type":"address"},{"internalType":"uint16","name":"_mintAmount","type":"uint16"}],"name":"mint","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"onlyWhitelist","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"openWhitelist","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"ownerOf","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"pause","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"paused","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"safeTransferFrom","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"},{"internalType":"bytes","name":"_data","type":"bytes"}],"name":"safeTransferFrom","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"operator","type":"address"},{"internalType":"bool","name":"approved","type":"bool"}],"name":"setApprovalForAll","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"string","name":"_newBaseExtension","type":"string"}],"name":"setBaseExtension","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"string","name":"_newBaseURI","type":"string"}],"name":"setBaseURI","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_newCost","type":"uint256"}],"name":"setCost","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_newmaxMintAmount","type":"uint256"}],"name":"setMaxMintAmount","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"bytes4","name":"interfaceId","type":"bytes4"}],"name":"supportsInterface","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"index","type":"uint256"}],"name":"tokenByIndex","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"uint256","name":"index","type":"uint256"}],"name":"tokenOfOwnerByIndex","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"tokenURI","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"transferFrom","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"unpause","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_owner","type":"address"}],"name":"walletOfOwner","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"withdraw","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"contract IERC20","name":"token","type":"address"}],"name":"withdrawERC20","outputs":[],"stateMutability":"nonpayable","type":"function"}]'
-    contract_instance = w3.eth.contract(address=contract_address, abi=contract_abi)
-    
-    for token_id in range(1,10):
-        token_uri = contract_instance.functions.tokenURI(token_id).call()
-        nft_metadata = requests.get(token_uri).json()
 
-        nft_info_row = {
-            "animation_url": "",
-            "chain": "Celo",
-            "collection_contract_address": contract_address,
-            "collection_name": "TODO",
-            "collection_slug": "TODO",
-            "description": "",
-            "image_mime_type": mimetypes.guess_type(nft_metadata["image"])[0],
-            "image_url": nft_metadata["image"],
-            "internet_mime_type": "",
-            "metadata": nft_metadata,
-            "metadata_uri": token_uri,
-            "mint_address": "",
-            "mint_block_timestamp": "",
-            "mint_transaction_hash": "",
-            "nft_token_id": token_id,
-            "token_name": nft_metadata["name"]
-        }
-        nft_info_list.append(nft_info_row)
+    for _, row in df_nft_collection_info.iterrows():
+        try:
+            collection_name = str(row["collection_name"])
+            collection_slug = str(row["collection_slug"])
+            contract_address = w3.to_checksum_address(row["contract_address"])
+
+            api_query = f"{celo_base_api_url}/?module=contract&action=getabi&address={contract_address}"
+            contract_abi = requests.get(api_query).json()["result"]
+            contract_instance = w3.eth.contract(address=contract_address, abi=contract_abi)
+            total_supply = int(row["total_supply"])
+    
+            for token_id in range(1,3): # just test first 2
+                token_uri = contract_instance.functions.tokenURI(token_id).call()
+                token_uri = "https://ipfs.io/ipfs" + token_uri[str(token_uri).find("/Qm"):]
+                nft_metadata = requests.get(token_uri).json()
+
+                nft_info_row = {
+                    "chain": "Celo",
+                    "collection_contract_address": contract_address,
+                    "collection_name": collection_name,
+                    "collection_slug": collection_slug,
+                    "description": nft_metadata["description"],
+                    "image_mime_type": mimetypes.guess_type(nft_metadata["image"])[0],
+                    "image_url": nft_metadata["image"],
+                    "metadata": nft_metadata,
+                    "metadata_uri": token_uri,
+                    "mint_address": "",
+                    "mint_block_timestamp": "",
+                    "mint_transaction_hash": "",
+                    "nft_token_id": token_id,
+                    "token_name": nft_metadata["name"]
+                }
+                nft_info_list.append(nft_info_row)
+        except:
+            err_msg = f"{sys.exc_info()[0]}, {sys.exc_info()[1]}, line: {sys.exc_info()[2].tb_lineno}"
+            print("nft_info error for", collection_name, ":", contract_address, "\n", err_msg)
+            #break
+            continue
 
     df_nft_tranfer = pd.DataFrame(nft_info_list, columns=config.nft_info_columns)
-    df_nft_tranfer.to_csv("./output/nft_info.csv", index=False, )
+    df_nft_tranfer.to_csv("./output/nft_info.csv", index=False)
 
 def pull_nft_transactions():
     contract_address = "0x179513e0fa9B5AD964405B01194105A2d8e0c2df" # just test
@@ -266,7 +282,7 @@ def pull_nft_transfers():
         
 
 ##########
-#pull_all_contracts()
+#pull_nft_contracts()
 #get_active_nft_collections()
 #pull_nft_transactions()
 #pull_nft_transfers()

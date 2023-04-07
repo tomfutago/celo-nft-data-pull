@@ -44,6 +44,18 @@ nft_info_columns=[
     "updated_at"
 ]
 
+nft_token_attributes_columns=[
+    "attribute_key",
+    "attribute_type",
+    "attribute_value",
+    "chain",
+    "collection_contract_address",
+    "collection_slug",
+    "created_at",
+    "nft_token_id",
+    "updated_at"
+]
+
 nft_transactions_columns=[
     "amount",
     "amount_currency",
