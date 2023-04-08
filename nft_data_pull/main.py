@@ -1,4 +1,7 @@
-import os, sys
+import os
+import sys
+import ast
+import json
 import requests
 import mimetypes
 import pandas as pd
@@ -176,6 +179,40 @@ def pull_nft_info():
     df_nft_tranfer = pd.DataFrame(nft_info_list, columns=config.nft_info_columns)
     df_nft_tranfer.to_csv("./output/nft_info.csv", index=False)
 
+def pull_nft_token_attributes():
+    df_nft_info = pd.read_csv("./output/nft_info.csv")
+    nft_token_attributes_list = []
+
+    for _, row in df_nft_info.iterrows():
+        try:
+            collection_contract_address = row["collection_contract_address"]
+            collection_slug = row["collection_slug"]
+            token_id = row["nft_token_id"]
+
+            json_md = json.dumps(ast.literal_eval(row["metadata"]))
+            dict_md = json.loads(json_md)
+            
+            if "attributes" in dict_md:
+                df_md = pd.json_normalize(dict_md["attributes"]).rename(
+                    index=str,
+                    columns={"trait_type": "attribute_key", "value": "attribute_value"}
+                )
+                df_md["attribute_type"] = df_md["attribute_value"].apply(lambda s: type(s).__name__)
+                df_md["nft_token_id"] = token_id
+                df_md["chain"] = "Celo"
+                df_md["collection_contract_address"] = collection_contract_address
+                df_md["collection_slug"] = collection_slug
+
+                nft_token_attributes_list.append(df_md)
+        except:
+            err_msg = f"{sys.exc_info()[0]}, {sys.exc_info()[1]}, line: {sys.exc_info()[2].tb_lineno}"
+            print("nft_token_attributes error for", collection_contract_address, "tokenId:", token_id, "\n", err_msg)
+            continue
+
+    df_nft_token_attributes = pd.concat(nft_token_attributes_list)
+    df_nft_token_attributes[["created_at", "updated_at"]] = ""
+    df_nft_token_attributes.to_csv("./output/nft_token_attributes.csv", index=False)
+
 def pull_nft_transactions():
     contract_address = "0x179513e0fa9B5AD964405B01194105A2d8e0c2df" # just test
 
@@ -286,4 +323,5 @@ def pull_nft_transfers():
 #get_active_nft_collections()
 #pull_nft_transactions()
 #pull_nft_transfers()
-pull_nft_info()
+#pull_nft_info()
+pull_nft_token_attributes()
