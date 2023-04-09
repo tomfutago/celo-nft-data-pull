@@ -143,37 +143,58 @@ def pull_nft_info():
             collection_slug = str(row["collection_slug"])
             contract_address = w3.to_checksum_address(row["contract_address"])
 
+            print(collection_name, ":", contract_address, "start..")
+
             api_query = f"{celo_base_api_url}/?module=contract&action=getabi&address={contract_address}"
             contract_abi = requests.get(api_query).json()["result"]
             contract_instance = w3.eth.contract(address=contract_address, abi=contract_abi)
             total_supply = int(row["total_supply"])
-    
-            for token_id in range(1,3): # just test first 2
-                token_uri = contract_instance.functions.tokenURI(token_id).call()
-                token_uri = "https://ipfs.io/ipfs" + token_uri[str(token_uri).find("/Qm"):]
-                nft_metadata = requests.get(token_uri).json()
+            err_count = 0
 
-                nft_info_row = {
-                    "chain": "Celo",
-                    "collection_contract_address": contract_address,
-                    "collection_name": collection_name,
-                    "collection_slug": collection_slug,
-                    "description": nft_metadata["description"],
-                    "image_mime_type": mimetypes.guess_type(nft_metadata["image"])[0],
-                    "image_url": nft_metadata["image"],
-                    "metadata": nft_metadata,
-                    "metadata_uri": token_uri,
-                    "mint_address": "",
-                    "mint_block_timestamp": "",
-                    "mint_transaction_hash": "",
-                    "nft_token_id": token_id,
-                    "token_name": nft_metadata["name"]
-                }
-                nft_info_list.append(nft_info_row)
+            # get token_uri template for last token
+            token_uri_url = contract_instance.functions.tokenURI(total_supply).call()
+
+            for token_id in range(1, total_supply + 1):
+                try:
+                    token_uri = str(token_uri_url).replace("/" + str(total_supply), "/" + str(token_id))
+                    if "/Qm" in token_uri:
+                        token_uri = "https://ipfs.io/ipfs" + token_uri[str(token_uri).find("/Qm"):]
+                    nft_metadata = requests.get(token_uri).json()
+
+                    token_description = ""
+                    if "description" in nft_metadata:
+                        token_description = nft_metadata["description"]
+
+                    nft_info_row = {
+                        "chain": "Celo",
+                        "collection_contract_address": contract_address,
+                        "collection_name": collection_name,
+                        "collection_slug": collection_slug,
+                        "description": token_description,
+                        "image_mime_type": mimetypes.guess_type(nft_metadata["image"])[0],
+                        "image_url": nft_metadata["image"],
+                        "metadata": nft_metadata,
+                        "metadata_uri": token_uri,
+                        "nft_token_id": token_id,
+                        "token_name": nft_metadata["name"]
+                    }
+                    nft_info_list.append(nft_info_row)
+
+                    if token_id % 100 == 0 or token_id == total_supply:
+                        print("..", contract_address, "progress :", token_id)
+                except:
+                    err_count += 1
+                    err_msg = f"{sys.exc_info()[0]}, {sys.exc_info()[1]}, line: {sys.exc_info()[2].tb_lineno}"
+                    print("nft_info token error for", contract_address, "token_id:", token_id, "\n", err_msg)
+                    if err_count < 10:
+                        continue
+                    else:
+                        break
+
+            print(collection_name, ":", contract_address, "end..")
         except:
             err_msg = f"{sys.exc_info()[0]}, {sys.exc_info()[1]}, line: {sys.exc_info()[2].tb_lineno}"
             print("nft_info error for", collection_name, ":", contract_address, "\n", err_msg)
-            #break
             continue
 
     df_nft_tranfer = pd.DataFrame(nft_info_list, columns=config.nft_info_columns)
@@ -323,5 +344,5 @@ def pull_nft_transfers():
 #get_active_nft_collections()
 #pull_nft_transactions()
 #pull_nft_transfers()
-#pull_nft_info()
-pull_nft_token_attributes()
+pull_nft_info()
+#pull_nft_token_attributes()
