@@ -198,7 +198,8 @@ def pull_nft_info():
             continue
 
     df_nft_tranfer = pd.DataFrame(nft_info_list, columns=config.nft_info_columns)
-    df_nft_tranfer.to_csv("./output/nft_info.csv", index=False)
+    #df_nft_tranfer.to_csv("./output/nft_info.csv", index=False)
+    df_nft_tranfer.to_csv("./output/nft_info.csv", mode="a", index=False, header=False)
 
 def pull_nft_token_attributes():
     df_nft_info = pd.read_csv("./output/nft_info.csv")
@@ -225,6 +226,9 @@ def pull_nft_token_attributes():
                 df_md["collection_slug"] = collection_slug
 
                 nft_token_attributes_list.append(df_md)
+
+                if token_id % 100 == 0:
+                    print("..", collection_contract_address, "progress :", token_id)
         except:
             err_msg = f"{sys.exc_info()[0]}, {sys.exc_info()[1]}, line: {sys.exc_info()[2].tb_lineno}"
             print("nft_token_attributes error for", collection_contract_address, "tokenId:", token_id, "\n", err_msg)
@@ -294,46 +298,54 @@ def pull_nft_transactions():
         }
 
 def pull_nft_transfers():
-    contract_address = "0x179513e0fa9B5AD964405B01194105A2d8e0c2df" # just test
+    df_nft_collection_info = pd.read_csv("./output/nft_collection_info.csv")
     nft_tranfer_list = []
 
-    """
-    api_query = f"{celo_base_api_url}/?module=token&action=tokentx&contractaddress={contract_address}&fromBlock=0&toBlock=latest"
-    result = requests.get(api_query).json()
-    with open('./tests/samples/transfers.json', 'w') as f:
-        json.dump(result, f, indent=4)
-    df_transfers = pd.json_normalize(result["result"])
-    df_transfers.to_csv("./output/staging/transfers.csv", index=False)
-    """
+    for _, row in df_nft_collection_info.iterrows():
+        try:
+            collection_name = str(row["collection_name"])
+            contract_address = w3.to_checksum_address(row["contract_address"])
 
-    df_transfers = pd.read_csv("./output/staging/transfers.csv")
+            print(collection_name, ":", contract_address, "start..")
 
-    for _, row in df_transfers.iterrows():
-        timestamp = datetime.fromtimestamp(hex_to_int(row["timeStamp"])).replace(microsecond=0).isoformat()
+            api_query = f"{celo_base_api_url}/?module=token&action=tokentx&contractaddress={contract_address}&fromBlock=0&toBlock=latest"
+            transfers = requests.get(api_query).json()
+            #with open('./tests/samples/transfers.json', 'w') as f:
+            #    json.dump(transfers, f, indent=4)
+            df_transfers = pd.json_normalize(transfers["result"])
 
-        topics = [str(item).strip("'") for item in row["topics"].strip("[]").split(", ")]
-        method_id = topics[0][:10]
-        if len(topics) == 4:
-            token_id = hex_to_int(topics[3])
-        else:
-            token_id = 0
-        
-        nft_tranfer_row = {
-            "amount_raw": token_id,
-            "block_date": datetime.fromisoformat(timestamp).date(),
-            "block_number": hex_to_int(row["blockNumber"]),
-            "block_timestamp": timestamp,
-            "chain": "Celo",
-            "collection_contract_address": contract_address,
-            "from_address": row["fromAddressHash"],
-            "internal_index": hex_to_int(row["transactionIndex"]),
-            "log_index": hex_to_int(row["logIndex"]),
-            "nft_token_id": token_id,
-            "to_address": row["fromAddressHash"],
-            "transaction_hash": row["transactionHash"],
-            "transfer_type": config.method_types[method_id]
-        }
-        nft_tranfer_list.append(nft_tranfer_row)
+            for _, row in df_transfers.iterrows():
+                timestamp = datetime.fromtimestamp(hex_to_int(row["timeStamp"])).replace(microsecond=0).isoformat()
+
+                topics = [str(item).strip("'") for item in row["topics"].strip("[]").split(", ")]
+                method_id = topics[0][:10]
+                if len(topics) == 4:
+                    token_id = hex_to_int(topics[3])
+                else:
+                    token_id = 0
+                
+                nft_tranfer_row = {
+                    "amount_raw": token_id,
+                    "block_date": datetime.fromisoformat(timestamp).date(),
+                    "block_number": hex_to_int(row["blockNumber"]),
+                    "block_timestamp": timestamp,
+                    "chain": "Celo",
+                    "collection_contract_address": contract_address,
+                    "from_address": row["fromAddressHash"],
+                    "internal_index": hex_to_int(row["transactionIndex"]),
+                    "log_index": hex_to_int(row["logIndex"]),
+                    "nft_token_id": token_id,
+                    "to_address": row["fromAddressHash"],
+                    "transaction_hash": row["transactionHash"],
+                    "transfer_type": config.method_types[method_id]
+                }
+                nft_tranfer_list.append(nft_tranfer_row)
+
+            print(collection_name, ":", contract_address, "end..")
+        except:
+            err_msg = f"{sys.exc_info()[0]}, {sys.exc_info()[1]}, line: {sys.exc_info()[2].tb_lineno}"
+            print("nft_transfers error for", collection_name, ":", contract_address, "tokenId:", token_id, "\n", err_msg)
+            continue
 
     df_nft_tranfer = pd.DataFrame(nft_tranfer_list, columns=config.nft_transfers_columns)
     df_nft_tranfer.to_csv("./output/nft_transfers.csv", index=False)
