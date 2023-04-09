@@ -317,7 +317,7 @@ def pull_nft_transfers():
             for _, row in df_transfers.iterrows():
                 timestamp = datetime.fromtimestamp(hex_to_int(row["timeStamp"])).replace(microsecond=0).isoformat()
 
-                topics = [str(item).strip("'") for item in row["topics"].strip("[]").split(", ")]
+                topics = [str(item).strip("'") for item in str(row["topics"]).strip("[]").split(", ")]
                 method_id = topics[0][:10]
                 if len(topics) == 4:
                     token_id = hex_to_int(topics[3])
@@ -354,7 +354,7 @@ def pull_nft_transfers():
 ##########
 #pull_nft_contracts()
 #get_active_nft_collections()
-#pull_nft_transactions()
-#pull_nft_transfers()
-pull_nft_info()
+#pull_nft_info()
 #pull_nft_token_attributes()
+pull_nft_transfers()
+#pull_nft_transactions()
