@@ -156,7 +156,11 @@ def pull_nft_info():
 
             for token_id in range(1, total_supply + 1):
                 try:
-                    token_uri = str(token_uri_url).replace("/" + str(total_supply), "/" + str(token_id))
+                    if "/" + str(total_supply) in token_uri_url:
+                        token_uri = str(token_uri_url).replace("/" + str(total_supply), "/" + str(token_id))
+                    else:
+                        token_uri = contract_instance.functions.tokenURI(token_id).call()
+                    
                     if "/Qm" in token_uri:
                         token_uri = "https://ipfs.io/ipfs" + token_uri[str(token_uri).find("/Qm"):]
                     nft_metadata = requests.get(token_uri).json()
@@ -197,9 +201,9 @@ def pull_nft_info():
             print("nft_info error for", collection_name, ":", contract_address, "\n", err_msg)
             continue
 
-    df_nft_tranfer = pd.DataFrame(nft_info_list, columns=config.nft_info_columns)
-    #df_nft_tranfer.to_csv("./output/nft_info.csv", index=False)
-    df_nft_tranfer.to_csv("./output/nft_info.csv", mode="a", index=False, header=False)
+    df_nft_info = pd.DataFrame(nft_info_list, columns=config.nft_info_columns)
+    #df_nft_info.to_csv("./output/nft_info.csv", index=False)
+    df_nft_info.to_csv("./output/nft_info.csv", mode="a", index=False, header=False)
 
 def pull_nft_token_attributes():
     df_nft_info = pd.read_csv("./output/nft_info.csv")
@@ -354,7 +358,7 @@ def pull_nft_transfers():
 ##########
 #pull_nft_contracts()
 #get_active_nft_collections()
-#pull_nft_info()
+pull_nft_info()
 #pull_nft_token_attributes()
-pull_nft_transfers()
+#pull_nft_transfers()
 #pull_nft_transactions()
