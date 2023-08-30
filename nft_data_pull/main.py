@@ -26,6 +26,76 @@ def hex_to_int(hex):
     except:
         return hex
 
+def pull_all_contracts():
+    contracts_list = []
+
+    for page_n in range(1, 1000):
+        api_query = f"{celo_base_api_url}/?module=contract&action=listcontracts&filter=verified&page={page_n}"
+        contract = requests.get(api_query).json()
+        #with open('./tests/samples/contracts.json', 'w') as f:
+        #    json.dump(result, f, indent=4)
+        df_contract = pd.json_normalize(contract["result"])
+        if df_contract.empty:
+            break
+        else:
+            contracts_list.append(df_contract)
+
+    df_contracts = pd.concat(contracts_list)
+    df_contracts.to_csv("./output/staging/contracts.csv", index=False)
+
+def get_active_contract_tokens():
+    df_contracts = pd.read_csv("./output/staging/contracts.csv")
+    contract_token_list = []
+
+    for _, row in df_contracts.iterrows():
+        try:
+            contract_name = str(row["ContractName"])
+            contract_address = w3.to_checksum_address(row["Address"])
+            contract_abi = row["ABI"]
+
+            contract_instance = w3.eth.contract(address=contract_address, abi=contract_abi)
+
+            # filter out if contract is paused
+            if "paused" in contract_abi:
+                is_paused = contract_instance.functions.paused().call()
+                if is_paused is True:
+                    continue
+            
+            api_query = f"{celo_base_api_url}/?module=token&action=getToken&contractaddress={contract_address}"
+            token = requests.get(api_query).json()
+
+            # skip if status not 1 : OK
+            if token["status"] != "1":
+                continue
+
+            symbol = token["result"]["symbol"]
+            token_type = token["result"]["type"]
+            decimals = token["result"]["decimals"]
+            
+            # if blank - pull token symbol
+            if symbol == "" and "symbol" in contract_abi:
+                symbol = contract_instance.functions.symbol().call()
+            
+            # filter out basd on symbol name
+            if "test" in str(symbol).lower():
+                continue
+            
+            contract_token_row = {
+                "contract_name" : contract_name,
+                "contract_address" : contract_address,
+                "token_type" : token_type,
+                "symbol" : symbol,
+                "decimals" : decimals
+            }
+            contract_token_list.append(contract_token_row)
+
+        except:
+            print("exception for:", contract_address)
+            continue
+
+    df_contract_token_info = pd.DataFrame(contract_token_list)
+    df_contract_token_info.to_csv("./output/staging/contract_token.csv", index=False)
+
 def pull_nft_contracts():
     nft_contracts_list = []
 
@@ -356,9 +426,11 @@ def pull_nft_transfers():
         
 
 ##########
+#pull_all_contracts()
+get_active_contract_tokens()
 #pull_nft_contracts()
 #get_active_nft_collections()
-pull_nft_info()
+#pull_nft_info()
 #pull_nft_token_attributes()
 #pull_nft_transfers()
 #pull_nft_transactions()
